@@ -1,0 +1,200 @@
+---
+- name: Install and configure prerequisites on all nodes
+  hosts: all
+  become: yes
+  vars:
+    atlas_version: "2.4.0"
+    atlas_install_dir: "/opt/apache-atlas-{{ atlas_version }}"
+    solr_version: "8.11.2"
+    solr_install_dir: "/opt/solr-{{ solr_version }}"
+    zookeeper_quorum: "192.168.22.10:2181,192.168.22.11:2181,192.168.22.16:2181"
+    kafka_broker: "192.168.22.14:9092"
+    atlas_user: "u1"  # Default user for most tasks
+    solr_user: "hadoopZetta"  # User specifically for Solr
+    hbase_dir: "/opt/hbase-2.5.5-hadoop3"
+    kafka_dir: "/opt/kafka"
+
+  tasks:
+    - name: Ensure u1 user exists
+      user:
+        name: "{{ atlas_user }}"
+        state: present
+        create_home: yes
+        shell: /bin/bash
+
+    - name: Ensure hadoopZetta user exists (for Solr)
+      user:
+        name: "{{ solr_user }}"
+        state: present
+        create_home: yes
+        shell: /bin/bash
+
+    - name: Install required packages
+      apt:
+        name: "{{ item }}"
+        state: present
+        update_cache: yes
+      loop:
+        - maven
+        - wget
+        - tar
+        - curl
+        - openjdk-8-jdk
+
+- name: Configure and install Atlas on master nodes
+  hosts: master1,master2
+  become: yes
+  become_user: "{{ atlas_user }}"
+  tasks:
+    - name: Download Apache Atlas source
+      get_url:
+        url: "https://dlcdn.apache.org/atlas/{{ atlas_version }}/apache-atlas-{{ atlas_version }}-sources.tar.gz"
+        dest: "/tmp/apache-atlas-{{ atlas_version }}-sources.tar.gz"
+        mode: '0644'
+
+    - name: Extract Atlas source
+      unarchive:
+        src: "/tmp/apache-atlas-{{ atlas_version }}-sources.tar.gz"
+        dest: "/tmp"
+        remote_src: yes
+        creates: "/tmp/apache-atlas-sources-{{ atlas_version }}"
+
+    - name: Build Atlas with Maven
+      command: "mvn clean -DskipTests package -Pdist"
+      args:
+        chdir: "/tmp/apache-atlas-sources-{{ atlas_version }}"
+        creates: "/tmp/apache-atlas-sources-{{ atlas_version }}/distro/target/apache-atlas-{{ atlas_version }}-bin.tar.gz"
+      environment:
+        MAVEN_OPTS: "-Xms2g -Xmx2g"
+
+    - name: Create Atlas installation directory
+      become: yes  # Switch to root for directory creation
+      file:
+        path: "{{ atlas_install_dir }}"
+        state: directory
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0755'
+
+    - name: Install Atlas binaries
+      become: yes  # Switch to root for installation
+      unarchive:
+        src: "/tmp/apache-atlas-sources-{{ atlas_version }}/distro/target/apache-atlas-{{ atlas_version }}-bin.tar.gz"
+        dest: "{{ atlas_install_dir }}"
+        remote_src: yes
+        extra_opts: "--strip-components=1"
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+
+    - name: Configure atlas-application.properties
+      template:
+        src: templates/atlas-application.properties.j2
+        dest: "{{ atlas_install_dir }}/conf/atlas-application.properties"
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0644'
+
+    - name: Configure atlas-env.sh
+      template:
+        src: templates/atlas-env.sh.j2
+        dest: "{{ atlas_install_dir }}/conf/atlas-env.sh"
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0755'
+
+    - name: Start HBase (on master1 only)
+      command: "{{ hbase_dir }}/bin/start-hbase.sh"
+      when: inventory_hostname == "master1"
+      register: hbase_start
+      failed_when: hbase_start.rc != 0 and "'already running' not in hbase_start.stderr"
+
+    - name: Grant HBase permissions to Atlas (on master1 only)
+      command: "echo \"grant 'atlas', 'RWXCA', 'atlas'\" | {{ hbase_dir }}/bin/hbase shell"
+      when: inventory_hostname == "master1"
+      register: hbase_grant
+      failed_when: hbase_grant.rc != 0
+
+- name: Install and configure Solr on master1
+  hosts: master1
+  become: yes
+  become_user: "{{ solr_user }}"  # Use hadoopZetta only for Solr tasks
+  tasks:
+    - name: Download Solr
+      get_url:
+        url: "https://downloads.apache.org/solr/solr/{{ solr_version }}/solr-{{ solr_version }}.tgz"
+        dest: "/tmp/solr-{{ solr_version }}.tgz"
+        mode: '0644'
+
+    - name: Extract Solr
+      unarchive:
+        src: "/tmp/solr-{{ solr_version }}.tgz"
+        dest: "/opt"
+        remote_src: yes
+        owner: "{{ solr_user }}"
+        group: "{{ solr_user }}"
+        creates: "{{ solr_install_dir }}"
+
+    - name: Start Solr in cloud mode
+      command: "{{ solr_install_dir }}/bin/solr start -cloud -z {{ zookeeper_quorum }} -p 8983"
+      register: solr_start
+      failed_when: solr_start.rc != 0 and "'already running' not in solr_start.stderr"
+
+    - name: Create Solr collections
+      command: "{{ solr_install_dir }}/bin/solr create -c {{ item }} -n data-driven-schema-configs"
+      loop:
+        - vertex_index
+        - edge_index
+        - fulltext_index
+      register: solr_create
+      failed_when: solr_create.rc != 0 and "'already exists' not in solr_create.stderr"
+
+- name: Configure Kafka on slave2
+  hosts: slave2
+  become: yes
+  become_user: "{{ atlas_user }}"  # Use u1 for Kafka tasks
+  tasks:
+    - name: Configure Kafka server.properties
+      template:
+        src: templates/server.properties.j2
+        dest: "{{ kafka_dir }}/config/server.properties"
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        mode: '0644'
+      notify: restart kafka
+
+    - name: Start Kafka
+      command: "{{ kafka_dir }}/bin/kafka-server-start.sh -daemon {{ kafka_dir }}/config/server.properties"
+      register: kafka_start
+      failed_when: kafka_start.rc != 0 and "'already running' not in kafka_start.stderr"
+
+    - name: Wait for Kafka to be ready
+      wait_for:
+        host: "{{ kafka_broker.split(':')[0] }}"
+        port: "{{ kafka_broker.split(':')[1] }}"
+        delay: 5
+        timeout: 60
+
+    - name: Create Kafka topics for Atlas
+      command: "{{ kafka_dir }}/bin/kafka-topics.sh --create --topic {{ item }} --bootstrap-server {{ kafka_broker }} --partitions 1 --replication-factor 1"
+      loop:
+        - ATLAS_HOOK
+        - ATLAS_ENTITIES
+      register: kafka_topics
+      failed_when: kafka_topics.rc != 0 and "'already exists' not in kafka_topics.stderr"
+
+- name: Start Atlas on master nodes
+  hosts: master1,master2
+  become: yes
+  become_user: "{{ atlas_user }}"  # Use u1 for Atlas startup
+  tasks:
+    - name: Start Atlas
+      command: "{{ atlas_install_dir }}/bin/atlas_start.py"
+      async: 60
+      poll: 0
+      register: atlas_start
+      failed_when: atlas_start.rc != 0 and "'already running' not in atlas_start.stderr"
+
+  handlers:
+    - name: restart kafka
+      command: "{{ kafka_dir }}/bin/kafka-server-stop.sh && sleep 5 && {{ kafka_dir }}/bin/kafka-server-start.sh -daemon {{ kafka_dir }}/config/server.properties"
+      become_user: "{{ atlas_user }}"

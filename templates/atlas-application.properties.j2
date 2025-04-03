@@ -1,0 +1,143 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+######### Graph Database Configs #########
+
+# Graph Storage Backend
+atlas.graph.storage.backend=hbase
+atlas.graph.storage.hbase.table=atlas
+atlas.graph.storage.hostname=192.168.22.10:2181,192.168.22.11:2181,192.168.22.16:2181
+atlas.graph.storage.hbase.regions-per-server=1
+atlas.cluster.name=primary
+
+# High Availability (HA) Configuration
+atlas.server.ha.enabled=true
+atlas.server.ids=id1,id2
+atlas.server.address.id1=192.168.22.10:21000
+atlas.server.address.id2=192.168.22.11:21000
+
+# HBase Hook
+atlas.hbase.hook.enabled=true
+
+# Entity Audit Repository
+atlas.EntityAuditRepository.impl=org.apache.atlas.repository.audit.HBaseBasedAuditRepository
+atlas.audit.hbase.tablename=apache_atlas_entity_audit
+atlas.audit.zookeeper.session.timeout.ms=1000
+atlas.audit.hbase.zookeeper.quorum=192.168.22.10:2181,192.168.22.11:2181,192.168.22.16:2181
+
+######### Graph Search Index #########
+
+# Search Backend (Solr in Cloud Mode)
+atlas.graph.index.search.backend=solr
+atlas.graph.index.search.solr.mode=cloud
+atlas.graph.index.search.solr.zookeeper-url=192.168.22.10:2181,192.168.22.11:2181,192.168.22.16:2181
+atlas.graph.index.search.solr.zookeeper-connect-timeout=60000
+atlas.graph.index.search.solr.zookeeper-session-timeout=60000
+atlas.graph.index.search.solr.wait-searcher=false
+
+# Solr-specific configuration
+atlas.graph.index.search.max-result-set-size=150
+
+######### Notification Configs #########
+
+# Kafka Configuration (External Kafka on slave2)
+atlas.notification.embedded=false
+atlas.kafka.data=${sys:atlas.home}/data/kafka
+atlas.kafka.zookeeper.connect=192.168.22.10:2181,192.168.22.11:2181,192.168.22.16:2181
+atlas.kafka.bootstrap.servers=192.168.22.14:9092
+atlas.kafka.zookeeper.session.timeout.ms=60000
+atlas.kafka.zookeeper.connection.timeout.ms=30000
+atlas.kafka.zookeeper.sync.time.ms=20
+atlas.kafka.auto.commit.interval.ms=1000
+atlas.kafka.hook.group.id=atlas
+atlas.kafka.enable.auto.commit=false
+atlas.kafka.auto.offset.reset=earliest
+atlas.kafka.session.timeout.ms=30000
+atlas.kafka.offsets.topic.replication.factor=1
+atlas.kafka.poll.timeout.ms=1000
+
+# Topic Creation
+atlas.notification.create.topics=true
+atlas.notification.replicas=1
+atlas.notification.topics=ATLAS_HOOK,ATLAS_ENTITIES
+atlas.notification.log.failed.messages=true
+atlas.notification.consumer.retry.interval=500
+atlas.notification.hook.retry.interval=1000
+
+######### Server Properties #########
+
+# Server Port and Binding
+atlas.server.http.port=21000
+atlas.server.bind.address=0.0.0.0
+atlas.rest.address=http://192.168.22.10:21000,http://192.168.22.11:21000
+
+# Disable setup on start (manual setup assumed)
+atlas.server.run.setup.on.start=false
+
+######### Security Properties #########
+
+# SSL (Disabled by default)
+atlas.enableTLS=false
+
+# Authentication (File-based by default)
+atlas.authentication.method.file=true
+atlas.authentication.method.file.filename=${sys:atlas.home}/conf/users-credentials.properties
+atlas.authentication.method.kerberos=false
+atlas.authentication.method.ldap.type=none
+
+######### Import Configs #########
+
+atlas.import.temp.directory=/temp/import
+
+######### Performance Configs #########
+
+atlas.graph.storage.lock.retries=10
+atlas.graph.storage.cache.db-cache-time=120000
+
+######### CSRF Configs #########
+
+atlas.rest-csrf.enabled=true
+atlas.rest-csrf.browser-useragents-regex=^Mozilla.*,^Opera.*,^Chrome.*
+atlas.rest-csrf.methods-to-ignore=GET,OPTIONS,HEAD,TRACE
+atlas.rest-csrf.custom-header=X-XSRF-HEADER
+
+######### UI Configuration #########
+
+atlas.ui.default.version=v1
+
+######### Full Text Search Configuration #########
+
+atlas.search.fulltext.enable=true
+
+######### Gremlin Search Configuration #########
+
+atlas.search.gremlin.enable=false
+
+######### Authorization #########
+
+atlas.authorizer.impl=simple
+atlas.authorizer.simple.authz.policy.file=atlas-simple-authz-policy.json
+
+######### Metric/Stats Configs #########
+
+atlas.metric.query.cache.ttlInSecs=900
+
+######### Compiled Query Cache Configuration #########
+
+atlas.CompiledQueryCache.capacity=1000
+atlas.CompiledQueryCache.evictionWarningThrottle=0

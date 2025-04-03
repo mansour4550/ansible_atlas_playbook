@@ -1,0 +1,108 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# see kafka.server.KafkaConfig for additional details and defaults
+
+############################# Server Basics #############################
+
+# The id of the broker. Must be unique for each broker (single broker in this case)
+broker.id=1
+
+############################# Socket Server Settings #############################
+
+# The address the socket server listens on
+listeners=PLAINTEXT://192.168.22.14:9092
+
+# Hostname and port advertised to producers and consumers
+advertised.listeners=PLAINTEXT://192.168.22.14:9092
+
+# Maps listener names to security protocols
+listener.security.protocol.map=PLAINTEXT:PLAINTEXT,SSL:SSL,SASL_PLAINTEXT:SASL_PLAINTEXT,SASL_SSL:SASL_SSL
+
+# Number of threads for network requests
+num.network.threads=3
+
+# Number of threads for processing requests (including disk I/O)
+num.io.threads=8
+
+# Send buffer size for the socket server
+socket.send.buffer.bytes=102400
+
+# Receive buffer size for the socket server
+socket.receive.buffer.bytes=102400
+
+# Maximum request size to prevent OOM
+socket.request.max.bytes=104857600
+
+############################# Log Basics #############################
+
+# Directory for Kafka log files (changed from /tmp to a persistent location)
+log.dirs=/opt/kafka/logs
+
+# Default number of partitions per topic (1 since single broker)
+num.partitions=1
+
+# Number of threads per data directory for log recovery and flushing
+num.recovery.threads.per.data.dir=1
+
+############################# Internal Topic Settings #############################
+
+# Replication factor for internal topics (set to 1 since single broker)
+offsets.topic.replication.factor=1
+transaction.state.log.replication.factor=1
+transaction.state.log.min.isr=1
+
+############################# Log Flush Policy #############################
+
+# Number of messages before forcing a flush to disk (default commented out for OS caching)
+#log.flush.interval.messages=10000
+
+# Maximum time a message sits in log before forcing a flush (default commented out for OS caching)
+#log.flush.interval.ms=1000
+
+############################# Log Retention POLICY #############################
+
+# Minimum age of log file before deletion (7 days is fine for most use cases)
+log.retention.hours=168
+
+# Size-based retention policy (uncomment and adjust if needed)
+#log.retention.bytes=1073741824
+
+# Maximum size of a log segment file
+log.segment.bytes=1073741824
+
+# Interval to check for log segment deletion
+log.retention.check.interval.ms=300000
+
+############################# ZooKeeper #############################
+
+# ZooKeeper connection string (matches your quorum)
+zookeeper.connect=192.168.22.10:2181,192.168.22.11:2181,192.168.22.16:2181
+
+# Timeout for connecting to ZooKeeper
+zookeeper.connection.timeout.ms=6000
+
+############################# Group Coordinator Settings #############################
+
+# Delay for initial consumer rebalance (set to 3000ms for production stability)
+group.initial.rebalance.delay.ms=3000
+
+############################# Additional Settings for Atlas #############################
+
+# Ensure compatibility with Atlas by setting a reasonable message size
+max.message.bytes=1048576
+
+# Minimum in-sync replicas for topics (set to 1 for single broker)
+default.replication.factor=1

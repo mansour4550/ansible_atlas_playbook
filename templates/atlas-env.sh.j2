@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# The Java implementation to use. Set JAVA_HOME explicitly for consistency
+export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64  # Adjust based on your system’s Java installation
+
+# Atlas home directory (matches your installation path)
+export ATLAS_HOME_DIR=/opt/apache-atlas-2.4.0
+
+# Where log files are stored
+export ATLAS_LOG_DIR=${ATLAS_HOME_DIR}/logs
+
+# Where PID files are stored
+export ATLAS_PID_DIR=${ATLAS_HOME_DIR}/logs
+
+# Where Atlas data is stored
+export ATLAS_DATA_DIR=${ATLAS_HOME_DIR}/data
+
+# Additional Java options for Atlas server
+export ATLAS_OPTS="-Djanusgraph.index.search.solr.mode=http -Djanusgraph.index.search.solr.http-urls=http://192.168.22.10:8983/solr"
+
+# JVM options for the Atlas server (optimized for production)
+export ATLAS_SERVER_OPTS="-server -XX:SoftRefLRUPolicyMSPerMB=0 -XX:+CMSClassUnloadingEnabled -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -XX:+PrintTenuringDistribution -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=${ATLAS_LOG_DIR}/dumps/atlas_server.hprof -Xloggc:${ATLAS_LOG_DIR}/gc-worker.log -verbose:gc -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=10 -XX:GCLogFileSize=1m -XX:+PrintGCDetails -XX:+PrintHeapAtGC -XX:+PrintGCTimeStamps"
+
+# Java heap size for the Atlas server (tuned for moderate to large metadata)
+export ATLAS_SERVER_HEAP="-Xms4g -Xmx4g -XX:MaxNewSize=1g -XX:MetaspaceSize=256m -XX:MaxMetaspaceSize=512m"
+
+# Indicates whether to manage a local HBase instance (set to false since we use an external HBase)
+export MANAGE_LOCAL_HBASE=false
+
+# Path to HBase configuration directory
+export HBASE_CONF_DIR=${ATLAS_HOME_DIR}/conf/hbase
+
+# Indicates whether to manage a local Solr instance (set to false since we use an external Solr)
+export MANAGE_LOCAL_SOLR=false
+
+# Indicates whether Cassandra is embedded (set to false as we’re using HBase)
+export MANAGE_EMBEDDED_CASSANDRA=false
+
+# Indicates whether to manage a local Elasticsearch instance (not used in this setup)
+export MANAGE_LOCAL_ELASTICSEARCH=false
