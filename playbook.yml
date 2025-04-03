@@ -1,35 +1,27 @@
 ---
 - name: Install and configure prerequisites on all nodes
   hosts: all
-  become: yes
+  become: yes  # Run as root
   vars:
     atlas_version: "2.4.0"
     atlas_install_dir: "/opt/apache-atlas-{{ atlas_version }}"
     solr_version: "8.11.2"
     solr_install_dir: "/opt/solr-{{ solr_version }}"
     zookeeper_quorum: "192.168.22.10:2181,192.168.22.11:2181,192.168.22.16:2181"
-    kafka_broker: "192.168.22.14:9092"
-    atlas_user: "u1"  # Default user for most tasks
-    solr_user: "hadoopZetta"  # User specifically for Solr
+    kafka_broker: "192.168.22.13:9092"
+    atlas_user: "hadoopZetta"  # User to own files and run services
     hbase_dir: "/opt/hbase-2.5.5-hadoop3"
-    kafka_dir: "/opt/kafka"
+    kafka_dir: "/opt/kafka_2.11-2.2.0"
 
   tasks:
-    - name: Ensure u1 user exists
+    - name: Ensure hadoopZetta user exists
       user:
         name: "{{ atlas_user }}"
         state: present
         create_home: yes
         shell: /bin/bash
 
-    - name: Ensure hadoopZetta user exists (for Solr)
-      user:
-        name: "{{ solr_user }}"
-        state: present
-        create_home: yes
-        shell: /bin/bash
-
-    - name: Install required packages
+    - name: Install required packages as root
       apt:
         name: "{{ item }}"
         state: present
@@ -41,10 +33,9 @@
         - curl
         - openjdk-8-jdk
 
-- name: Configure and install Atlas on master nodes
+- name: Install and configure Atlas on master nodes
   hosts: master1,master2
-  become: yes
-  become_user: "{{ atlas_user }}"
+  become: yes  # Run as root for installation
   tasks:
     - name: Download Apache Atlas source
       get_url:
@@ -68,47 +59,46 @@
         MAVEN_OPTS: "-Xms2g -Xmx2g"
 
     - name: Create Atlas installation directory
-      become: yes  # Switch to root for directory creation
       file:
         path: "{{ atlas_install_dir }}"
         state: directory
-        owner: "{{ atlas_user }}"
-        group: "{{ atlas_user }}"
         mode: '0755'
 
     - name: Install Atlas binaries
-      become: yes  # Switch to root for installation
       unarchive:
         src: "/tmp/apache-atlas-sources-{{ atlas_version }}/distro/target/apache-atlas-{{ atlas_version }}-bin.tar.gz"
         dest: "{{ atlas_install_dir }}"
         remote_src: yes
         extra_opts: "--strip-components=1"
-        owner: "{{ atlas_user }}"
-        group: "{{ atlas_user }}"
 
     - name: Configure atlas-application.properties
       template:
         src: templates/atlas-application.properties.j2
         dest: "{{ atlas_install_dir }}/conf/atlas-application.properties"
-        owner: "{{ atlas_user }}"
-        group: "{{ atlas_user }}"
         mode: '0644'
 
     - name: Configure atlas-env.sh
       template:
         src: templates/atlas-env.sh.j2
         dest: "{{ atlas_install_dir }}/conf/atlas-env.sh"
-        owner: "{{ atlas_user }}"
-        group: "{{ atlas_user }}"
         mode: '0755'
 
+    - name: Change ownership of Atlas directory to hadoopZetta
+      file:
+        path: "{{ atlas_install_dir }}"
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        recurse: yes
+
     - name: Start HBase (on master1 only)
+      become_user: "{{ atlas_user }}"
       command: "{{ hbase_dir }}/bin/start-hbase.sh"
       when: inventory_hostname == "master1"
       register: hbase_start
       failed_when: hbase_start.rc != 0 and "'already running' not in hbase_start.stderr"
 
     - name: Grant HBase permissions to Atlas (on master1 only)
+      become_user: "{{ atlas_user }}"
       command: "echo \"grant 'atlas', 'RWXCA', 'atlas'\" | {{ hbase_dir }}/bin/hbase shell"
       when: inventory_hostname == "master1"
       register: hbase_grant
@@ -116,8 +106,7 @@
 
 - name: Install and configure Solr on master1
   hosts: master1
-  become: yes
-  become_user: "{{ solr_user }}"  # Use hadoopZetta only for Solr tasks
+  become: yes  # Run as root for installation
   tasks:
     - name: Download Solr
       get_url:
@@ -130,16 +119,23 @@
         src: "/tmp/solr-{{ solr_version }}.tgz"
         dest: "/opt"
         remote_src: yes
-        owner: "{{ solr_user }}"
-        group: "{{ solr_user }}"
         creates: "{{ solr_install_dir }}"
 
+    - name: Change ownership of Solr directory to hadoopZetta
+      file:
+        path: "{{ solr_install_dir }}"
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        recurse: yes
+
     - name: Start Solr in cloud mode
+      become_user: "{{ atlas_user }}"
       command: "{{ solr_install_dir }}/bin/solr start -cloud -z {{ zookeeper_quorum }} -p 8983"
       register: solr_start
       failed_when: solr_start.rc != 0 and "'already running' not in solr_start.stderr"
 
     - name: Create Solr collections
+      become_user: "{{ atlas_user }}"
       command: "{{ solr_install_dir }}/bin/solr create -c {{ item }} -n data-driven-schema-configs"
       loop:
         - vertex_index
@@ -148,26 +144,62 @@
       register: solr_create
       failed_when: solr_create.rc != 0 and "'already exists' not in solr_create.stderr"
 
-- name: Configure Kafka on slave2
+- name: Install and configure Kafka on slave2
   hosts: slave2
-  become: yes
-  become_user: "{{ atlas_user }}"  # Use u1 for Kafka tasks
+  become: yes  # Run as root for installation
   tasks:
+    - name: Download Kafka
+      get_url:
+        url: "https://downloads.apache.org/kafka/3.6.0/kafka_2.13-3.6.0.tgz"
+        dest: "/tmp/kafka_2.13-3.6.0.tgz"
+        mode: '0644'
+
+    - name: Extract Kafka
+      unarchive:
+        src: "/tmp/kafka_2.13-3.6.0.tgz"
+        dest: "/opt"
+        remote_src: yes
+        creates: "/opt/kafka_2.13-3.6.0"
+
+    - name: Create Kafka symlink
+      file:
+        src: "/opt/kafka_2.13-3.6.0"
+        dest: "{{ kafka_dir }}"
+        state: link
+
+    - name: Ensure Kafka config directory exists
+      file:
+        path: "{{ kafka_dir }}/config"
+        state: directory
+        mode: '0755'
+
     - name: Configure Kafka server.properties
       template:
         src: templates/server.properties.j2
         dest: "{{ kafka_dir }}/config/server.properties"
+        mode: '0644'
+
+    - name: Ensure Kafka log directory exists
+      file:
+        path: "{{ kafka_dir }}/logs"
+        state: directory
+        mode: '0755'
+
+    - name: Change ownership of Kafka directory to hadoopZetta
+      file:
+        path: "{{ kafka_dir }}"
         owner: "{{ atlas_user }}"
         group: "{{ atlas_user }}"
-        mode: '0644'
-      notify: restart kafka
+        recurse: yes
 
     - name: Start Kafka
+      become_user: "{{ atlas_user }}"
       command: "{{ kafka_dir }}/bin/kafka-server-start.sh -daemon {{ kafka_dir }}/config/server.properties"
       register: kafka_start
       failed_when: kafka_start.rc != 0 and "'already running' not in kafka_start.stderr"
 
     - name: Wait for Kafka to be ready
+      become_user: "{{ atlas_user }}"
       wait_for:
         host: "{{ kafka_broker.split(':')[0] }}"
         port: "{{ kafka_broker.split(':')[1] }}"
@@ -175,6 +207,7 @@
         timeout: 60
 
     - name: Create Kafka topics for Atlas
+      become_user: "{{ atlas_user }}"
       command: "{{ kafka_dir }}/bin/kafka-topics.sh --create --topic {{ item }} --bootstrap-server {{ kafka_broker }} --partitions 1 --replication-factor 1"
       loop:
         - ATLAS_HOOK
@@ -184,10 +217,10 @@
 
 - name: Start Atlas on master nodes
   hosts: master1,master2
-  become: yes
-  become_user: "{{ atlas_user }}"  # Use u1 for Atlas startup
+  become: yes  # Run as root initially
   tasks:
     - name: Start Atlas
+      become_user: "{{ atlas_user }}"
       command: "{{ atlas_install_dir }}/bin/atlas_start.py"
       async: 60
       poll: 0
@@ -196,5 +229,5 @@
 
   handlers:
     - name: restart kafka
-      command: "{{ kafka_dir }}/bin/kafka-server-stop.sh && sleep 5 && {{ kafka_dir }}/bin/kafka-server-start.sh -daemon {{ kafka_dir }}/config/server.properties"
       become_user: "{{ atlas_user }}"
+      command: "{{ kafka_dir }}/bin/kafka-server-stop.sh && sleep 5 && {{ kafka_dir }}/bin/kafka-server-start.sh -daemon {{ kafka_dir }}/config/server.properties"

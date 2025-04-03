@@ -18,10 +18,10 @@
 #
 
 # The Java implementation to use. Set JAVA_HOME explicitly for consistency
-export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64  # Adjust based on your system’s Java installation
+export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64  # Adjust based on your system's Java installation
 
-# Atlas home directory (matches your installation path)
-export ATLAS_HOME_DIR=/opt/apache-atlas-2.4.0
+# Atlas home directory (dynamically set from playbook)
+export ATLAS_HOME_DIR={{ atlas_install_dir }}
 
 # Where log files are stored
 export ATLAS_LOG_DIR=${ATLAS_HOME_DIR}/logs
@@ -32,7 +32,7 @@ export ATLAS_PID_DIR=${ATLAS_HOME_DIR}/logs
 # Where Atlas data is stored
 export ATLAS_DATA_DIR=${ATLAS_HOME_DIR}/data
 
-# Additional Java options for Atlas server
+# Additional Java options for Atlas server (Solr on master1)
 export ATLAS_OPTS="-Djanusgraph.index.search.solr.mode=http -Djanusgraph.index.search.solr.http-urls=http://192.168.22.10:8983/solr"
 
 # JVM options for the Atlas server (optimized for production)
