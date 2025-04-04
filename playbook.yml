@@ -8,10 +8,10 @@
     solr_version: "8.11.2"
     solr_install_dir: "/opt/solr-{{ solr_version }}"
     zookeeper_quorum: "192.168.22.10:2181,192.168.22.11:2181,192.168.22.16:2181"
-    kafka_broker: "192.168.22.13:9092"
+    kafka_broker: "192.168.22.13:9092"  # Updated per your vars
     atlas_user: "hadoopZetta"  # User to own files and run services
     hbase_dir: "/opt/hbase-2.5.5-hadoop3"
-    kafka_dir: "/opt/kafka_2.11-2.2.0"
+    kafka_dir: "/opt/kafka_2.11-2.2.0"  # Updated per your vars
 
   tasks:
     - name: Ensure hadoopZetta user exists
@@ -104,8 +104,8 @@
       register: hbase_grant
       failed_when: hbase_grant.rc != 0
 
-- name: Install and configure Solr on master1
-  hosts: master1
+- name: Install and configure Solr on slave2 and edge1
+  hosts: slave2,edge1
   become: yes  # Run as root for installation
   tasks:
     - name: Download Solr
@@ -134,9 +134,10 @@
       register: solr_start
       failed_when: solr_start.rc != 0 and "'already running' not in solr_start.stderr"
 
-    - name: Create Solr collections
+    - name: Create Solr collections (on slave2 only)
       become_user: "{{ atlas_user }}"
       command: "{{ solr_install_dir }}/bin/solr create -c {{ item }} -n data-driven-schema-configs"
+      when: inventory_hostname == "slave2"
       loop:
         - vertex_index
         - edge_index
@@ -150,22 +151,16 @@
   tasks:
     - name: Download Kafka
       get_url:
-        url: "https://downloads.apache.org/kafka/3.6.0/kafka_2.13-3.6.0.tgz"
-        dest: "/tmp/kafka_2.13-3.6.0.tgz"
+        url: "https://archive.apache.org/dist/kafka/2.2.0/kafka_2.11-2.2.0.tgz"  # Updated to match kafka_dir
+        dest: "/tmp/kafka_2.11-2.2.0.tgz"
         mode: '0644'
 
     - name: Extract Kafka
       unarchive:
-        src: "/tmp/kafka_2.13-3.6.0.tgz"
+        src: "/tmp/kafka_2.11-2.2.0.tgz"
         dest: "/opt"
         remote_src: yes
-        creates: "/opt/kafka_2.13-3.6.0"
-
-    - name: Create Kafka symlink
-      file:
-        src: "/opt/kafka_2.13-3.6.0"
-        dest: "{{ kafka_dir }}"
-        state: link
+        creates: "{{ kafka_dir }}"
 
     - name: Ensure Kafka config directory exists
       file:

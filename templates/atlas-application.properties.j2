@@ -18,48 +18,33 @@
 
 ######### Graph Database Configs #########
 
-# Graph Storage Backend
+# ... (license header unchanged) ...
+
 atlas.graph.storage.backend=hbase
 atlas.graph.storage.hbase.table=atlas
 atlas.graph.storage.hostname={{ zookeeper_quorum }}
 atlas.graph.storage.hbase.regions-per-server=1
 atlas.cluster.name=primary
-
-# High Availability (HA) Configuration
 atlas.server.ha.enabled=true
 atlas.server.ids=id1,id2
 atlas.server.address.id1=192.168.22.10:21000
 atlas.server.address.id2=192.168.22.11:21000
-
-# HBase Hook
 atlas.hbase.hook.enabled=true
-
-# Entity Audit Repository
 atlas.EntityAuditRepository.impl=org.apache.atlas.repository.audit.HBaseBasedAuditRepository
 atlas.audit.hbase.tablename=apache_atlas_entity_audit
 atlas.audit.zookeeper.session.timeout.ms=1000
 atlas.audit.hbase.zookeeper.quorum={{ zookeeper_quorum }}
-
-######### Graph Search Index #########
-
-# Search Backend (Solr in Cloud Mode)
 atlas.graph.index.search.backend=solr
 atlas.graph.index.search.solr.mode=cloud
 atlas.graph.index.search.solr.zookeeper-url={{ zookeeper_quorum }}
 atlas.graph.index.search.solr.zookeeper-connect-timeout=60000
 atlas.graph.index.search.solr.zookeeper-session-timeout=60000
 atlas.graph.index.search.solr.wait-searcher=false
-
-# Solr-specific configuration
 atlas.graph.index.search.max-result-set-size=150
-
-######### Notification Configs #########
-
-# Kafka Configuration (External Kafka on slave2)
 atlas.notification.embedded=false
 atlas.kafka.data={{ atlas_install_dir }}/data/kafka
 atlas.kafka.zookeeper.connect={{ zookeeper_quorum }}
-atlas.kafka.bootstrap.servers={{ kafka_broker }}
+atlas.kafka.bootstrap.servers={{ kafka_broker }}  # Updated to 192.168.22.13:9092
 atlas.kafka.zookeeper.session.timeout.ms=60000
 atlas.kafka.zookeeper.connection.timeout.ms=30000
 atlas.kafka.zookeeper.sync.time.ms=20
