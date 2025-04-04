@@ -8,10 +8,10 @@
     solr_version: "8.11.2"
     solr_install_dir: "/opt/solr-{{ solr_version }}"
     zookeeper_quorum: "192.168.22.10:2181,192.168.22.11:2181,192.168.22.16:2181"
-    kafka_broker: "192.168.22.13:9092"  # Updated per your vars
+    kafka_broker: "192.168.22.13:9092"
     atlas_user: "hadoopZetta"  # User to own files and run services
     hbase_dir: "/opt/hbase-2.5.5-hadoop3"
-    kafka_dir: "/opt/kafka_2.11-2.2.0"  # Updated per your vars
+    kafka_dir: "/opt/kafka_2.11-2.2.0"
 
   tasks:
     - name: Ensure hadoopZetta user exists
@@ -37,11 +37,17 @@
   hosts: master1,master2
   become: yes  # Run as root for installation
   tasks:
+    - name: Check if Atlas is already installed
+      stat:
+        path: "{{ atlas_install_dir }}/bin/atlas_start.py"
+      register: atlas_installed
+
     - name: Download Apache Atlas source
       get_url:
         url: "https://dlcdn.apache.org/atlas/{{ atlas_version }}/apache-atlas-{{ atlas_version }}-sources.tar.gz"
         dest: "/tmp/apache-atlas-{{ atlas_version }}-sources.tar.gz"
         mode: '0644'
+      when: not atlas_installed.stat.exists
 
     - name: Extract Atlas source
       unarchive:
@@ -49,6 +55,7 @@
         dest: "/tmp"
         remote_src: yes
         creates: "/tmp/apache-atlas-sources-{{ atlas_version }}"
+      when: not atlas_installed.stat.exists
 
     - name: Build Atlas with Maven
       command: "mvn clean -DskipTests package -Pdist"
@@ -57,12 +64,14 @@
         creates: "/tmp/apache-atlas-sources-{{ atlas_version }}/distro/target/apache-atlas-{{ atlas_version }}-bin.tar.gz"
       environment:
         MAVEN_OPTS: "-Xms2g -Xmx2g"
+      when: not atlas_installed.stat.exists
 
     - name: Create Atlas installation directory
       file:
         path: "{{ atlas_install_dir }}"
         state: directory
         mode: '0755'
+      when: not atlas_installed.stat.exists
 
     - name: Install Atlas binaries
       unarchive:
@@ -70,6 +79,7 @@
         dest: "{{ atlas_install_dir }}"
         remote_src: yes
         extra_opts: "--strip-components=1"
+      when: not atlas_installed.stat.exists
 
     - name: Configure atlas-application.properties
       template:
@@ -90,17 +100,23 @@
         group: "{{ atlas_user }}"
         recurse: yes
 
+    - name: Check if HBase is already installed
+      stat:
+        path: "{{ hbase_dir }}/bin/start-hbase.sh"
+      register: hbase_installed
+      when: inventory_hostname == "master1"
+
     - name: Start HBase (on master1 only)
       become_user: "{{ atlas_user }}"
       command: "{{ hbase_dir }}/bin/start-hbase.sh"
-      when: inventory_hostname == "master1"
+      when: inventory_hostname == "master1" and hbase_installed.stat.exists
       register: hbase_start
       failed_when: hbase_start.rc != 0 and "'already running' not in hbase_start.stderr"
 
     - name: Grant HBase permissions to Atlas (on master1 only)
       become_user: "{{ atlas_user }}"
       command: "echo \"grant 'atlas', 'RWXCA', 'atlas'\" | {{ hbase_dir }}/bin/hbase shell"
-      when: inventory_hostname == "master1"
+      when: inventory_hostname == "master1" and hbase_installed.stat.exists
       register: hbase_grant
       failed_when: hbase_grant.rc != 0
 
@@ -108,11 +124,17 @@
   hosts: slave2,edge1
   become: yes  # Run as root for installation
   tasks:
+    - name: Check if Solr is already installed
+      stat:
+        path: "{{ solr_install_dir }}/bin/solr"
+      register: solr_installed
+
     - name: Download Solr
       get_url:
         url: "https://downloads.apache.org/solr/solr/{{ solr_version }}/solr-{{ solr_version }}.tgz"
         dest: "/tmp/solr-{{ solr_version }}.tgz"
         mode: '0644'
+      when: not solr_installed.stat.exists
 
     - name: Extract Solr
       unarchive:
@@ -120,6 +142,7 @@
         dest: "/opt"
         remote_src: yes
         creates: "{{ solr_install_dir }}"
+      when: not solr_installed.stat.exists
 
     - name: Change ownership of Solr directory to hadoopZetta
       file:
@@ -131,13 +154,14 @@
     - name: Start Solr in cloud mode
       become_user: "{{ atlas_user }}"
       command: "{{ solr_install_dir }}/bin/solr start -cloud -z {{ zookeeper_quorum }} -p 8983"
+      when: solr_installed.stat.exists
       register: solr_start
       failed_when: solr_start.rc != 0 and "'already running' not in solr_start.stderr"
 
     - name: Create Solr collections (on slave2 only)
       become_user: "{{ atlas_user }}"
       command: "{{ solr_install_dir }}/bin/solr create -c {{ item }} -n data-driven-schema-configs"
-      when: inventory_hostname == "slave2"
+      when: inventory_hostname == "slave2" and solr_installed.stat.exists
       loop:
         - vertex_index
         - edge_index
@@ -149,11 +173,17 @@
   hosts: slave2
   become: yes  # Run as root for installation
   tasks:
+    - name: Check if Kafka is already installed
+      stat:
+        path: "{{ kafka_dir }}/bin/kafka-server-start.sh"
+      register: kafka_installed
+
     - name: Download Kafka
       get_url:
-        url: "https://archive.apache.org/dist/kafka/2.2.0/kafka_2.11-2.2.0.tgz"  # Updated to match kafka_dir
+        url: "https://archive.apache.org/dist/kafka/2.2.0/kafka_2.11-2.2.0.tgz"
         dest: "/tmp/kafka_2.11-2.2.0.tgz"
         mode: '0644'
+      when: not kafka_installed.stat.exists
 
     - name: Extract Kafka
       unarchive:
@@ -161,6 +191,7 @@
         dest: "/opt"
         remote_src: yes
         creates: "{{ kafka_dir }}"
+      when: not kafka_installed.stat.exists
 
     - name: Ensure Kafka config directory exists
       file:
@@ -190,6 +221,7 @@
     - name: Start Kafka
       become_user: "{{ atlas_user }}"
       command: "{{ kafka_dir }}/bin/kafka-server-start.sh -daemon {{ kafka_dir }}/config/server.properties"
+      when: kafka_installed.stat.exists
       register: kafka_start
       failed_when: kafka_start.rc != 0 and "'already running' not in kafka_start.stderr"
 
@@ -200,10 +232,12 @@
         port: "{{ kafka_broker.split(':')[1] }}"
         delay: 5
         timeout: 60
+      when: kafka_installed.stat.exists
 
     - name: Create Kafka topics for Atlas
       become_user: "{{ atlas_user }}"
       command: "{{ kafka_dir }}/bin/kafka-topics.sh --create --topic {{ item }} --bootstrap-server {{ kafka_broker }} --partitions 1 --replication-factor 1"
+      when: kafka_installed.stat.exists
       loop:
         - ATLAS_HOOK
         - ATLAS_ENTITIES
@@ -226,3 +260,4 @@
     - name: restart kafka
       become_user: "{{ atlas_user }}"
       command: "{{ kafka_dir }}/bin/kafka-server-stop.sh && sleep 5 && {{ kafka_dir }}/bin/kafka-server-start.sh -daemon {{ kafka_dir }}/config/server.properties"
+      when: kafka_installed.stat.exists is defined and kafka_installed.stat.exists
