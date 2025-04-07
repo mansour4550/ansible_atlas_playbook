@@ -18,8 +18,6 @@
 
 ######### Graph Database Configs #########
 
-# ... (license header unchanged) ...
-
 atlas.graph.storage.backend=hbase
 atlas.graph.storage.hbase.table=atlas
 atlas.graph.storage.hostname={{ zookeeper_quorum }}
@@ -34,6 +32,9 @@ atlas.EntityAuditRepository.impl=org.apache.atlas.repository.audit.HBaseBasedAud
 atlas.audit.hbase.tablename=apache_atlas_entity_audit
 atlas.audit.zookeeper.session.timeout.ms=1000
 atlas.audit.hbase.zookeeper.quorum={{ zookeeper_quorum }}
+
+######### Index Search Configs (Solr) #########
+
 atlas.graph.index.search.backend=solr
 atlas.graph.index.search.solr.mode=cloud
 atlas.graph.index.search.solr.zookeeper-url={{ zookeeper_quorum }}
@@ -41,10 +42,13 @@ atlas.graph.index.search.solr.zookeeper-connect-timeout=60000
 atlas.graph.index.search.solr.zookeeper-session-timeout=60000
 atlas.graph.index.search.solr.wait-searcher=false
 atlas.graph.index.search.max-result-set-size=150
+
+######### Notification Configs (Kafka) #########
+
 atlas.notification.embedded=false
 atlas.kafka.data={{ atlas_install_dir }}/data/kafka
 atlas.kafka.zookeeper.connect={{ zookeeper_quorum }}
-atlas.kafka.bootstrap.servers={{ kafka_broker }}  # Updated to 192.168.22.13:9092
+atlas.kafka.bootstrap.servers={{ kafka_broker }}  # Resolves to 192.168.22.14:9092
 atlas.kafka.zookeeper.session.timeout.ms=60000
 atlas.kafka.zookeeper.connection.timeout.ms=30000
 atlas.kafka.zookeeper.sync.time.ms=20
@@ -66,20 +70,14 @@ atlas.notification.hook.retry.interval=1000
 
 ######### Server Properties #########
 
-# Server Port and Binding
 atlas.server.http.port=21000
 atlas.server.bind.address=0.0.0.0
 atlas.rest.address=http://192.168.22.10:21000,http://192.168.22.11:21000
-
-# Disable setup on start (manual setup assumed)
 atlas.server.run.setup.on.start=false
 
 ######### Security Properties #########
 
-# SSL (Disabled by default)
 atlas.enableTLS=false
-
-# Authentication (File-based by default)
 atlas.authentication.method.file=true
 atlas.authentication.method.file.filename={{ atlas_install_dir }}/conf/users-credentials.properties
 atlas.authentication.method.kerberos=false
@@ -116,7 +114,7 @@ atlas.search.gremlin.enable=false
 ######### Authorization #########
 
 atlas.authorizer.impl=simple
-atlas.authorizer.simple.authz.policy.file=atlas-simple-authz-policy.json
+atlas.authorizer.simple.authz.policy.file={{ atlas_install_dir }}/conf/atlas-simple-authz-policy.json
 
 ######### Metric/Stats Configs #########
 

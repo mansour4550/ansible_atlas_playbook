@@ -1,15 +1,15 @@
 ---
 - name: Install and configure prerequisites on all nodes
   hosts: all
-  become: yes  # Run as root
+  become: yes
   vars:
     atlas_version: "2.4.0"
     atlas_install_dir: "/opt/apache-atlas-{{ atlas_version }}"
     solr_version: "8.11.2"
     solr_install_dir: "/opt/solr-{{ solr_version }}"
     zookeeper_quorum: "192.168.22.10:2181,192.168.22.11:2181,192.168.22.16:2181"
-    kafka_broker: "192.168.22.13:9092"
-    atlas_user: "hadoopZetta"  # User to own files and run services
+    kafka_broker: "192.168.22.14:9092"  # Updated to match your document
+    atlas_user: "hadoopZetta"
     hbase_dir: "/opt/hbase-2.5.5-hadoop3"
     kafka_dir: "/opt/kafka_2.11-2.2.0"
 
@@ -35,7 +35,7 @@
 
 - name: Install and configure Atlas on master nodes
   hosts: master1,master2
-  become: yes  # Run as root for installation
+  become: yes
   tasks:
     - name: Check if Atlas is already installed
       stat:
@@ -57,7 +57,8 @@
         creates: "/tmp/apache-atlas-sources-{{ atlas_version }}"
       when: not atlas_installed.stat.exists
 
-    - name: Build Atlas with Maven
+    - name: Build Atlas with Maven as hadoopZetta
+      become_user: "{{ atlas_user }}"
       command: "mvn clean -DskipTests package -Pdist"
       args:
         chdir: "/tmp/apache-atlas-sources-{{ atlas_version }}"
@@ -79,6 +80,14 @@
         dest: "{{ atlas_install_dir }}"
         remote_src: yes
         extra_opts: "--strip-components=1"
+      when: not atlas_installed.stat.exists
+
+    - name: Copy default config files from source
+      copy:
+        src: "/tmp/apache-atlas-sources-{{ atlas_version }}/conf/"
+        dest: "{{ atlas_install_dir }}/conf/"
+        remote_src: yes
+        mode: '0644'
       when: not atlas_installed.stat.exists
 
     - name: Configure atlas-application.properties
@@ -120,36 +129,14 @@
       register: hbase_grant
       failed_when: hbase_grant.rc != 0
 
-- name: Install and configure Solr on slave2 and edge1
+- name: Configure Solr on slave2 and edge1
   hosts: slave2,edge1
-  become: yes  # Run as root for installation
+  become: yes
   tasks:
     - name: Check if Solr is already installed
       stat:
         path: "{{ solr_install_dir }}/bin/solr"
       register: solr_installed
-
-    - name: Download Solr
-      get_url:
-        url: "https://downloads.apache.org/solr/solr/{{ solr_version }}/solr-{{ solr_version }}.tgz"
-        dest: "/tmp/solr-{{ solr_version }}.tgz"
-        mode: '0644'
-      when: not solr_installed.stat.exists
-
-    - name: Extract Solr
-      unarchive:
-        src: "/tmp/solr-{{ solr_version }}.tgz"
-        dest: "/opt"
-        remote_src: yes
-        creates: "{{ solr_install_dir }}"
-      when: not solr_installed.stat.exists
-
-    - name: Change ownership of Solr directory to hadoopZetta
-      file:
-        path: "{{ solr_install_dir }}"
-        owner: "{{ atlas_user }}"
-        group: "{{ atlas_user }}"
-        recurse: yes
 
     - name: Start Solr in cloud mode
       become_user: "{{ atlas_user }}"
@@ -169,29 +156,14 @@
       register: solr_create
       failed_when: solr_create.rc != 0 and "'already exists' not in solr_create.stderr"
 
-- name: Install and configure Kafka on slave2
+- name: Configure Kafka on slave2
   hosts: slave2
-  become: yes  # Run as root for installation
+  become: yes
   tasks:
     - name: Check if Kafka is already installed
       stat:
         path: "{{ kafka_dir }}/bin/kafka-server-start.sh"
       register: kafka_installed
-
-    - name: Download Kafka
-      get_url:
-        url: "https://archive.apache.org/dist/kafka/2.2.0/kafka_2.11-2.2.0.tgz"
-        dest: "/tmp/kafka_2.11-2.2.0.tgz"
-        mode: '0644'
-      when: not kafka_installed.stat.exists
-
-    - name: Extract Kafka
-      unarchive:
-        src: "/tmp/kafka_2.11-2.2.0.tgz"
-        dest: "/opt"
-        remote_src: yes
-        creates: "{{ kafka_dir }}"
-      when: not kafka_installed.stat.exists
 
     - name: Ensure Kafka config directory exists
       file:
@@ -246,7 +218,7 @@
 
 - name: Start Atlas on master nodes
   hosts: master1,master2
-  become: yes  # Run as root initially
+  become: yes
   tasks:
     - name: Start Atlas
       become_user: "{{ atlas_user }}"

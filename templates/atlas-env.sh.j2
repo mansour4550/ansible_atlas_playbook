@@ -33,7 +33,7 @@ export ATLAS_PID_DIR=${ATLAS_HOME_DIR}/logs
 export ATLAS_DATA_DIR=${ATLAS_HOME_DIR}/data
 
 # Additional Java options for Atlas server (Solr on slave2 and edge1)
-export ATLAS_OPTS="-Djanusgraph.index.search.solr.mode=http -Djanusgraph.index.search.solr.http-urls=http://192.168.22.13:8983/solr,http://192.168.22.17:8983/solr"
+export ATLAS_OPTS="-Djanusgraph.index.search.solr.mode=http -Djanusgraph.index.search.solr.http-urls=http://192.168.22.14:8983/solr,http://192.168.22.17:8983/solr"
 
 # JVM options for the Atlas server (optimized for production)
 export ATLAS_SERVER_OPTS="-server -XX:SoftRefLRUPolicyMSPerMB=0 -XX:+CMSClassUnloadingEnabled -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -XX:+PrintTenuringDistribution -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=${ATLAS_LOG_DIR}/dumps/atlas_server.hprof -Xloggc:${ATLAS_LOG_DIR}/gc-worker.log -verbose:gc -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=10 -XX:GCLogFileSize=1m -XX:+PrintGCDetails -XX:+PrintHeapAtGC -XX:+PrintGCTimeStamps"
