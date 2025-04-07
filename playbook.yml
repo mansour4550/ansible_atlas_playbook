@@ -8,7 +8,7 @@
     solr_version: "8.11.2"
     solr_install_dir: "/opt/solr-{{ solr_version }}"
     zookeeper_quorum: "192.168.22.10:2181,192.168.22.11:2181,192.168.22.16:2181"
-    kafka_broker: "192.168.22.14:9092"  # Updated to match your document
+    kafka_broker: "192.168.22.14:9092"
     atlas_user: "hadoopZetta"
     hbase_dir: "/opt/hbase-2.5.5-hadoop3"
     kafka_dir: "/opt/kafka_2.11-2.2.0"
@@ -32,6 +32,135 @@
         - tar
         - curl
         - openjdk-8-jdk
+        - python3  # Ensure Python 3 is installed for atlas_start.py
+
+- name: Start HBase on master1
+  hosts: master1
+  become: yes
+  tasks:
+    - name: Check if HBase is already installed
+      stat:
+        path: "{{ hbase_dir }}/bin/start-hbase.sh"
+      register: hbase_installed
+
+    - name: Start HBase
+      become_user: "{{ atlas_user }}"
+      command: "{{ hbase_dir }}/bin/start-hbase.sh"
+      when: hbase_installed.stat.exists
+      register: hbase_start
+      failed_when: hbase_start.rc != 0 and "'already running' not in hbase_start.stderr"
+
+    - name: Wait for HBase to be ready
+      become_user: "{{ atlas_user }}"
+      command: "{{ hbase_dir }}/bin/hbase shell -c 'status'"
+      register: hbase_status
+      until: hbase_status.rc == 0
+      retries: 5
+      delay: 10
+      when: hbase_installed.stat.exists
+
+    - name: Grant HBase permissions to Atlas
+      become_user: "{{ atlas_user }}"
+      command: "echo \"grant 'atlas', 'RWXCA', 'atlas'\" | {{ hbase_dir }}/bin/hbase shell"
+      when: hbase_installed.stat.exists
+      register: hbase_grant
+      failed_when: hbase_grant.rc != 0
+
+- name: Configure and start Solr on slave2 and edge1
+  hosts: slave2,edge1
+  become: yes
+  tasks:
+    - name: Check if Solr is already installed
+      stat:
+        path: "{{ solr_install_dir }}/bin/solr"
+      register: solr_installed
+
+    - name: Start Solr in cloud mode
+      become_user: "{{ atlas_user }}"
+      command: "{{ solr_install_dir }}/bin/solr start -cloud -z {{ zookeeper_quorum }} -p 8983"
+      when: solr_installed.stat.exists
+      register: solr_start
+      failed_when: solr_start.rc != 0 and "'already running' not in solr_start.stderr"
+
+    - name: Wait for Solr to be ready
+      become_user: "{{ atlas_user }}"
+      wait_for:
+        host: "{{ inventory_hostname }}"
+        port: 8983
+        delay: 5
+        timeout: 60
+      when: solr_installed.stat.exists
+
+    - name: Create Solr collections (on slave2 only)
+      become_user: "{{ atlas_user }}"
+      command: "{{ solr_install_dir }}/bin/solr create -c {{ item }} -n data-driven-schema-configs"
+      when: inventory_hostname == "slave2" and solr_installed.stat.exists
+      loop:
+        - vertex_index
+        - edge_index
+        - fulltext_index
+      register: solr_create
+      failed_when: solr_create.rc != 0 and "'already exists' not in solr_create.stderr"
+
+- name: Configure and start Kafka on slave2
+  hosts: slave2
+  become: yes
+  tasks:
+    - name: Check if Kafka is already installed
+      stat:
+        path: "{{ kafka_dir }}/bin/kafka-server-start.sh"
+      register: kafka_installed
+
+    - name: Ensure Kafka config directory exists
+      file:
+        path: "{{ kafka_dir }}/config"
+        state: directory
+        mode: '0755'
+
+    - name: Configure Kafka server.properties
+      template:
+        src: templates/server.properties.j2
+        dest: "{{ kafka_dir }}/config/server.properties"
+        mode: '0644'
+
+    - name: Ensure Kafka log directory exists
+      file:
+        path: "{{ kafka_dir }}/logs"
+        state: directory
+        mode: '0755'
+
+    - name: Change ownership of Kafka directory to hadoopZetta
+      file:
+        path: "{{ kafka_dir }}"
+        owner: "{{ atlas_user }}"
+        group: "{{ atlas_user }}"
+        recurse: yes
+
+    - name: Start Kafka
+      become_user: "{{ atlas_user }}"
+      command: "{{ kafka_dir }}/bin/kafka-server-start.sh -daemon {{ kafka_dir }}/config/server.properties"
+      when: kafka_installed.stat.exists
+      register: kafka_start
+      failed_when: kafka_start.rc != 0 and "'already running' not in kafka_start.stderr"
+
+    - name: Wait for Kafka to be ready
+      become_user: "{{ atlas_user }}"
+      wait_for:
+        host: "{{ kafka_broker.split(':')[0] }}"
+        port: "{{ kafka_broker.split(':')[1] }}"
+        delay: 5
+        timeout: 60
+      when: kafka_installed.stat.exists
+
+    - name: Create Kafka topics for Atlas
+      become_user: "{{ atlas_user }}"
+      command: "{{ kafka_dir }}/bin/kafka-topics.sh --create --topic {{ item }} --bootstrap-server {{ kafka_broker }} --partitions 1 --replication-factor 1"
+      when: kafka_installed.stat.exists
+      loop:
+        - ATLAS_HOOK
+        - ATLAS_ENTITIES
+      register: kafka_topics
+      failed_when: kafka_topics.rc != 0 and "'already exists' not in kafka_topics.stderr"
 
 - name: Install and configure Atlas on master nodes
   hosts: master1,master2
@@ -109,120 +238,11 @@
         group: "{{ atlas_user }}"
         recurse: yes
 
-    - name: Check if HBase is already installed
-      stat:
-        path: "{{ hbase_dir }}/bin/start-hbase.sh"
-      register: hbase_installed
-      when: inventory_hostname == "master1"
-
-    - name: Start HBase (on master1 only)
-      become_user: "{{ atlas_user }}"
-      command: "{{ hbase_dir }}/bin/start-hbase.sh"
-      when: inventory_hostname == "master1" and hbase_installed.stat.exists
-      register: hbase_start
-      failed_when: hbase_start.rc != 0 and "'already running' not in hbase_start.stderr"
-
-    - name: Grant HBase permissions to Atlas (on master1 only)
-      become_user: "{{ atlas_user }}"
-      command: "echo \"grant 'atlas', 'RWXCA', 'atlas'\" | {{ hbase_dir }}/bin/hbase shell"
-      when: inventory_hostname == "master1" and hbase_installed.stat.exists
-      register: hbase_grant
-      failed_when: hbase_grant.rc != 0
-
-- name: Configure Solr on slave2 and edge1
-  hosts: slave2,edge1
-  become: yes
-  tasks:
-    - name: Check if Solr is already installed
-      stat:
-        path: "{{ solr_install_dir }}/bin/solr"
-      register: solr_installed
-
-    - name: Start Solr in cloud mode
-      become_user: "{{ atlas_user }}"
-      command: "{{ solr_install_dir }}/bin/solr start -cloud -z {{ zookeeper_quorum }} -p 8983"
-      when: solr_installed.stat.exists
-      register: solr_start
-      failed_when: solr_start.rc != 0 and "'already running' not in solr_start.stderr"
-
-    - name: Create Solr collections (on slave2 only)
-      become_user: "{{ atlas_user }}"
-      command: "{{ solr_install_dir }}/bin/solr create -c {{ item }} -n data-driven-schema-configs"
-      when: inventory_hostname == "slave2" and solr_installed.stat.exists
-      loop:
-        - vertex_index
-        - edge_index
-        - fulltext_index
-      register: solr_create
-      failed_when: solr_create.rc != 0 and "'already exists' not in solr_create.stderr"
-
-- name: Configure Kafka on slave2
-  hosts: slave2
-  become: yes
-  tasks:
-    - name: Check if Kafka is already installed
-      stat:
-        path: "{{ kafka_dir }}/bin/kafka-server-start.sh"
-      register: kafka_installed
-
-    - name: Ensure Kafka config directory exists
-      file:
-        path: "{{ kafka_dir }}/config"
-        state: directory
-        mode: '0755'
-
-    - name: Configure Kafka server.properties
-      template:
-        src: templates/server.properties.j2
-        dest: "{{ kafka_dir }}/config/server.properties"
-        mode: '0644'
-
-    - name: Ensure Kafka log directory exists
-      file:
-        path: "{{ kafka_dir }}/logs"
-        state: directory
-        mode: '0755'
-
-    - name: Change ownership of Kafka directory to hadoopZetta
-      file:
-        path: "{{ kafka_dir }}"
-        owner: "{{ atlas_user }}"
-        group: "{{ atlas_user }}"
-        recurse: yes
-
-    - name: Start Kafka
-      become_user: "{{ atlas_user }}"
-      command: "{{ kafka_dir }}/bin/kafka-server-start.sh -daemon {{ kafka_dir }}/config/server.properties"
-      when: kafka_installed.stat.exists
-      register: kafka_start
-      failed_when: kafka_start.rc != 0 and "'already running' not in kafka_start.stderr"
-
-    - name: Wait for Kafka to be ready
-      become_user: "{{ atlas_user }}"
-      wait_for:
-        host: "{{ kafka_broker.split(':')[0] }}"
-        port: "{{ kafka_broker.split(':')[1] }}"
-        delay: 5
-        timeout: 60
-      when: kafka_installed.stat.exists
-
-    - name: Create Kafka topics for Atlas
-      become_user: "{{ atlas_user }}"
-      command: "{{ kafka_dir }}/bin/kafka-topics.sh --create --topic {{ item }} --bootstrap-server {{ kafka_broker }} --partitions 1 --replication-factor 1"
-      when: kafka_installed.stat.exists
-      loop:
-        - ATLAS_HOOK
-        - ATLAS_ENTITIES
-      register: kafka_topics
-      failed_when: kafka_topics.rc != 0 and "'already exists' not in kafka_topics.stderr"
-
-- name: Start Atlas on master nodes
-  hosts: master1,master2
-  become: yes
-  tasks:
     - name: Start Atlas
       become_user: "{{ atlas_user }}"
-      command: "{{ atlas_install_dir }}/bin/atlas_start.py"
+      command: "python3 {{ atlas_install_dir }}/bin/atlas_start.py"
+      environment:
+        DISPLAY: ""  # Suppress X server errors
       async: 60
       poll: 0
       register: atlas_start
